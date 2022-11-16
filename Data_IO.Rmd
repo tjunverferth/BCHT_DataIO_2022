@@ -1,0 +1,129 @@
+---
+title: "Data_IO_2022"
+author: "Brittany Araujo.36"
+date: '2022-11-05'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Setup
+library(tidyverse)
+#library(patchwork)
+#library(ggrepel)
+library(broom)
+library(dplyr)
+library(readr)
+library(GGally)
+```
+
+
+```{r}
+v2x_sum <- read_csv("~/OSU Academics/OSU_Y3/AU22/Data I-O 2022/v2x_data/v2x_summary.csv")
+sum_size <- c(nrow(v2x_sum), ncol(v2x_sum))
+
+/* 
+  v2x_host <-
+  read_csv("~/OSU Academics/OSU_Y3/AU22/Data I-O 2022/v2x_data/v2x_host.csv")
+v2x_host %>%
+  View(v2x_host)
+host_size <- c(nrow(v2x_host), ncol(v2x_host))
+v2x_host <- v2x_host %>% rename("device2" = "device")
+names(v2x_host)
+something <-
+  semi_join(v2x_sum, v2x_host, by = c("device2", "device")) 
+*/
+```
+
+
+```{r}
+#something <- merge(v2x_sum, v2x_host, by="device") %>% select("device", "elevation", "avgspeed","tripdistance")
+#something$avgspeed = something$avgspeed * 2.23694
+
+
+someSum <- v2x_sum %>% select(c("device", "startlatitude", "endlatitude", "avgspeed","filedate","numintersectionencounters","startlongitude","endlongitude","tripdistance")) 
+
+laterSomeSum <- v2x_sum %>% select(c("device", "numintersectionencounters","tripdistance")) 
+#colNames <- names(someSum)
+# types <- c()
+# for (i in 1:length(colNames)) {
+#   someSum[,i]
+# }
+# class(someSum$startlatitude) = "Numeric"
+# class(someSum$endlatitude) = "Numeric"
+# class(someSum$startlongitude) = "Numeric"
+# class(someSum$endlongitude) = "Numeric"
+# class(someSum$avgspeed) = "Numeric"
+# class(someSum$numintersectionencounters) = "Numeric"
+# class(someSum$tripdistance) = "Numeric"
+
+# types
+# typeof(someSum)
+someSum <- someSum %>% filter(numintersectionencounters > 1)
+someSum$avgspeed = someSum$avgspeed*2.23694 # converts avgspeed from meters/seconds to miles/hour
+#%>% 
+#typeOf(someSum)
+someSum
+#stabilityControl <- v2x_host %>% select("device", "elevation")  #"stabilitycontrolstatus",)
+```
+
+
+```{r}
+minLat <- min(c(min(someSum$startlatitude), min(someSum$endlatitude)))
+minLong <- min(c(min(someSum$startlongitude), min(someSum$endlongitude)))
+
+maxLat <- max(c(max(someSum$startlatitude), max(someSum$endlatitude)))
+maxLong <-max(c(max(someSum$startlongitude), max(someSum$startlongitude)))
+minLat
+minLong
+maxLat
+maxLong
+```
+\
+It was found that all trips started and ended in Columbus, Ohio.
+\
+
+
+```{r}
+someCol <-someSum %>% select(avgspeed, numintersectionencounters, tripdistance)
+ggpairs(someCol) #data.frame(someSum$avgspeed, someSum$numintersectionencounters, someSum$tripdistance))
+```
+\
+The relationships between avgspeed, numintersectionencounters, and tripdistance were found. This was in order to find if any of them had significant relationships to further investigate. The most prominent were avgspeed vs tripdistance and avgspeed vs numintersectionencounters.
+\
+
+
+```{r}
+someSum %>% ggplot(aes(x= numintersectionencounters , y= avgspeed, color=tripdistance)) + geom_point()+theme_bw(10) +geom_smooth() + labs(title = "Number of Intersection Encounters during Trip vs Average speed (mph)")
+someSum %>% ggplot(aes(x= tripdistance , y= avgspeed, color=numintersectionencounters)) + geom_point()+theme_bw(10) +geom_smooth() + labs(title = "Average speed (mph) vs Trip Distance")
+someSum %>% ggplot(aes(x= log10(tripdistance) , y= avgspeed)) + geom_point()+theme_bw(10) +geom_smooth() + labs(title = "Average speed (mph) vs log10(Trip Distance)")
+```
+\
+avgSpeed vs numintersectionencounters is mostly linear, and avgspeed vs tripdistance is not as linear, so it was transformed with $log_10$.
+\
+```{r}
+someSum2.lm <- lm(avgspeed ~ numintersectionencounters, data=someSum)
+someSum3.lm <-lm(avgspeed ~ numintersectionencounters + log10(tripdistance), data=someSum)
+
+summary(someSum3.lm)
+```
+\
+With this info we can decide if each of the predictors (numintersectionencounters, tripdistance) are useful if the other predictor (tripdistance, numintersectionencounters) is already being utilized to predict avgspeed. Since p-value for both numintersectionencounters with tripdistance adjusted for and vice versa is $6.95\;x\;10^{-7}$ and $<\;2\;x\;10^{-16}$, these are less than our chosen significance level, 0.05. Therefore each of these predictors are useful for predicting avgspeed even when the other predictor is already being utilized for predicting it.
+
+$avgSpeed = -1.5838*numintersectionencounters + 12.9551*log10(tripdistance) + -3.9803$
+\
+
+```{r}
+plot(someSum$avgspeed, resid(someSum3.lm)); abline(h=0)
+#hist(resid(someSum3.lm), xlab="Residuals", main="", breaks = 30)
+qqnorm(resid(someSum3.lm));qqline(resid(someSum3.lm))
+```
+\
+The first plot of residuals does not have them scattered randomly around the y=0 line, a required assumption for the linear regression since error is supposed to have constant variance. However, the  errors are following the line in the normal q-q plot, so the errors follow a normal distribution, another assumption of the linear regression.
+\
+
+```{r}
+library(plotly)
+fig <- plot_ly(someSum, x=~numintersectionencounters, z=~log10(tripdistance), y=~avgspeed, marker=list(color=~numintersectionencounters,showscale=TRUE))
+fig
+```
+
